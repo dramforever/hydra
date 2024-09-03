@@ -138,6 +138,7 @@ struct Build
     std::map<std::string, nix::StorePath> outputs;
     JobsetID jobsetId;
     std::string projectName, jobsetName, jobName;
+    std::set<std::string> requiredSystemFeatures;
     time_t timestamp;
     unsigned int maxSilentTime, buildTimeout;
     int localPriority, globalPriority;

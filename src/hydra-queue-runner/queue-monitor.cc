@@ -3,6 +3,7 @@
 #include "globals.hh"
 
 #include <cstring>
+#include <regex>
 
 using namespace nix;
 
@@ -104,6 +105,7 @@ bool State::getQueuedBuilds(Connection & conn,
         auto res = txn.exec_params
             ("select builds.id, builds.jobset_id, jobsets.project as project, "
              "jobsets.name as jobset, job, drvPath, maxsilent, timeout, timestamp, "
+             "builds.description as description, "
              "globalPriority, priority from Builds "
              "inner join jobsets on builds.jobset_id = jobsets.id "
              "where builds.id > $1 and finished = 0 order by globalPriority desc, builds.id",
@@ -132,6 +134,17 @@ bool State::getQueuedBuilds(Connection & conn,
             build->globalPriority = row["globalPriority"].as<int>();
             build->localPriority = row["priority"].as<int>();
             build->jobset = createJobset(txn, build->projectName, build->jobsetName, build->jobsetId);
+
+            std::regex featureRegex(R"(\?feature=([\w-]+))");
+            std::string description = row["description"].as<std::string>(std::string{});
+
+            for (
+                auto it = std::sregex_iterator(description.cbegin(), description.cend(), featureRegex);
+                it != std::sregex_iterator();
+                it ++
+            ) {
+                build->requiredSystemFeatures.insert((*it)[1].str());
+            }
 
             newIDs.push_back(id);
             newBuildsByID[id] = build;
@@ -275,6 +288,8 @@ bool State::getQueuedBuilds(Connection & conn,
             build->toplevel = step;
         }
 
+        const auto &features = build->requiredSystemFeatures;
+        build->toplevel->requiredSystemFeatures.insert(features.cbegin(), features.cend());
         build->propagatePriorities();
 
         printMsg(lvlChatty, "added build %1% (top-level step %2%, %3% new steps)",
